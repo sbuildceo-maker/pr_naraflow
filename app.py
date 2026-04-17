@@ -1026,13 +1026,16 @@ async def manual_collect(request: Request):
                                 except Exception as e:
                                     logs.append(f"오류: {kw}({bid_type}) {page}p - {e}"); break
 
+            saved_bid = 0
             if batch:
                 try:
-                    supabase.table("nara_bid_data").upsert(list(batch.values()), on_conflict="company_id,bid_id").execute()
+                    supabase.table("nara_bid_data").upsert(list(batch.values()), on_conflict="bid_id").execute()
+                    saved_bid = len(batch)
                 except Exception as ex:
                     logs.append(f"저장 오류: {ex}")
-            logs.append(f"입찰 수집 완료: {len(batch)}건")
-            return JSONResponse({"ok": True, "count": len(batch), "logs": logs})
+                    return JSONResponse({"ok": False, "error": str(ex), "count": 0, "logs": logs})
+            logs.append(f"입찰 수집 완료: {saved_bid}건")
+            return JSONResponse({"ok": True, "count": saved_bid, "logs": logs})
 
         else:
             return JSONResponse({"ok": False, "error": f"지원하지 않는 수집 유형: {collect_type}", "count": 0})

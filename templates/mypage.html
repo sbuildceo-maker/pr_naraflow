@@ -124,7 +124,8 @@ function collectForm() {
     async collect(type) {
       this.loading = true;
       this.activeType = type;
-      this.logs = [`⏳ ${type === 'service' ? '용역' : '계약'} 수집 시작 (${this.sDate} ~ ${this.eDate})...`];
+      const typeLabel = type === 'service' ? '용역' : type === 'market' ? '계약' : '입찰';
+      this.logs = [`⏳ ${typeLabel} 수집 시작 (${this.sDate} ~ ${this.eDate})...`];
       try {
         const res = await apiFetch('/api/mypage/collect', {
           method: 'POST',

@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+{% block title %}계약현황 — NARA BID{% endblock %}
+
+{% block content %}
+<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+  <h1 class="text-2xl font-bold">📝 계약 통합 분석</h1>
+  {% if db_range and db_range.oldest %}
+  <div class="flex items-center gap-2 bg-green-50 border border-green-100 rounded-xl px-4 py-2 text-xs text-green-700">
+    <span class="font-medium">📦 적재 데이터</span>
+    <span class="text-green-600">{{ db_range.oldest[:10] }} ~ {{ db_range.newest[:10] }}</span>
+    <span class="bg-green-100 text-green-700 rounded-full px-2 py-0.5 font-semibold">총 {{ "{:,}".format(db_range.total) }}건</span>
+  </div>
+  {% endif %}
+</div>
+
+<!-- 필터 바 -->
+<form method="get" action="/market" class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 mb-5">
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div>
+      <label class="text-xs font-medium text-slate-500 block mb-1">시작일</label>
+      <input type="date" name="s_date" value="{{ s_date }}"
+             class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+    </div>
+    <div>
+      <label class="text-xs font-medium text-slate-500 block mb-1">종료일</label>
+      <input type="date" name="e_date" value="{{ e_date }}"
+             class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+    </div>
+    <div>
+      <label class="text-xs font-medium text-slate-500 block mb-1">검색어</label>
+      <input type="text" name="search" value="{{ search }}" placeholder="업체명, 기관, 계약명..."
+             class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+    </div>
+    <div class="flex items-end">
+      <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">조회</button>
+    </div>
+  </div>
+</form>
+
+<!-- 탭 -->
+<div x-data="marketTabs()">
+  <div class="flex gap-1 bg-slate-100 p-1 rounded-xl mb-5 w-fit">
+    <button @click="switchTab('data')" :class="tab==='data'?'bg-white shadow text-blue-600 font-semibold':'text-slate-500'" class="px-4 py-2 rounded-lg text-sm transition-all">📋 전체</button>
+    <button @click="switchTab('report')" :class="tab==='report'?'bg-white shadow text-blue-600 font-semibold':'text-slate-500'" class="px-4 py-2 rounded-lg text-sm transition-all">📊 업체분석</button>
+    <button @click="switchTab('region')" :class="tab==='region'?'bg-white shadow text-blue-600 font-semibold':'text-slate-500'" class="px-4 py-2 rounded-lg text-sm transition-all">📍 지역분석</button>
+  </div>
+
+  <!-- ── 전체 탭 ── -->
+  <div x-show="tab==='data'" x-cloak>
+    <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+      <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+        <span class="font-semibold text-sm">전체 {{ total_rows }}건</span>
+        <span class="text-xs text-slate-400">최대 300건 표시</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-slate-600 text-xs">
+            <tr>
+              {% for h in ['계약일','계약명','업체','발주기관','품목','모델','금액'] %}
+              <th class="px-4 py-3 text-left font-medium">{{ h }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for row in data %}
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="px-4 py-3 whitespace-nowrap text-slate-500 text-xs">{{ row.contract_date }}</td>
+              <td class="px-4 py-3 text-slate-800 max-w-xs truncate">{{ row.contract_name }}</td>
+              <td class="px-4 py-3 text-slate-600 whitespace-nowrap">{{ row.company_name }}</td>
+              <td class="px-4 py-3 text-slate-600 max-w-xs truncate">{{ row.agency }}</td>
+              <td class="px-4 py-3 text-slate-500 whitespace-nowrap">{{ row.item_name }}</td>
+              <td class="px-4 py-3 text-slate-500 whitespace-nowrap text-xs">{{ row.model_name }}</td>
+              <td class="px-4 py-3 text-right font-medium whitespace-nowrap">{{ "{:,}".format(row.amount|int) }}원</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="px-4 py-12 text-center text-slate-400">데이터가 없습니다.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 업체분석 탭 ── -->
+  <div x-show="tab==='report'" x-cloak>
+    <!-- 업체 선택 폼 -->
+    <form method="get" action="/market" class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 mb-5">
+      <input type="hidden" name="s_date" value="{{ s_date }}">
+      <input type="hidden" name="e_date" value="{{ e_date }}">
+      <input type="hidden" name="search" value="{{ search }}">
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 items-end">
+        <div class="sm:col-span-2">
+          <label class="text-xs font-medium text-slate-500 block mb-1">분석 대상 업체</label>
+          <datalist id="mkt-company-list">
+            {% for c in companies %}<option value="{{ c }}">{% endfor %}
+          </datalist>
+          <div class="flex gap-2">
+            <input type="text" name="company_sel" value="{{ company_sel }}" list="mkt-company-list"
+                   placeholder="업체명 선택 또는 직접 입력..."
+                   class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">조회</button>
+          </div>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-slate-500 block mb-1">조회 단위</label>
+          <select name="view_type" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" onchange="this.form.submit()">
+            <option {% if view_type=='월별' %}selected{% endif %}>월별</option>
+            <option {% if view_type=='연도별' %}selected{% endif %}>연도별</option>
+          </select>
+        </div>
+      </div>
+    </form>
+
+    {% if report %}
+    <!-- KPI 카드 -->
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-5">
+      <h2 class="font-bold text-lg text-slate-800 mb-4">🏢 {{ report.company }}</h2>
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        {% set kpi = [
+          ('총 계약 건수', report.total_count|string + '건', 'blue'),
+          ('총 계약 금액',
+           (report.total_amount / 100000000)|round(2)|string + '억' if report.total_amount >= 100000000
+           else (report.total_amount / 10000)|int|string + '만',
+           'green'),
+          ('건당 평균',
+           (report.avg_amount / 100000000)|round(2)|string + '억' if report.avg_amount >= 100000000
+           else (report.avg_amount / 10000)|int|string + '만',
+           'purple'),
+          ('주요 발주처', report.top_agency[:10], 'orange'),
+          ('거래 기간', report.period, 'slate'),
+        ] %}
+        {% for label, val, color in kpi %}
+        <div class="text-center">
+          <div class="text-xs text-slate-500 mb-1">{{ label }}</div>
+          <div class="text-xl font-black text-{{ color }}-600">{{ val }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- 차트 3개 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 lg:col-span-2">
+        <h3 class="font-semibold text-slate-700 mb-4">📈 {{ view_type }} 수주 트렌드</h3>
+        <div style="height:280px"><canvas id="trendChart"></canvas></div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+        <h3 class="font-semibold text-slate-700 mb-4">🗂️ 카테고리별 납품 구성</h3>
+        <div style="height:280px"><canvas id="catChart"></canvas></div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5">
+        <h3 class="font-semibold text-slate-700 mb-4">🏛️ 주요 발주처 TOP10</h3>
+        <div style="height:280px"><canvas id="agencyChart"></canvas></div>
+      </div>
+    </div>
+    {% else %}
+    <div class="bg-white rounded-xl p-12 text-center text-slate-400">업체를 선택해주세요.</div>
+    {% endif %}
+  </div>
+
+  <!-- ── 지역분석 탭 ── -->
+  <div x-show="tab==='region'" x-cloak x-data="marketRegion()">
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5 mb-4">
+      <h3 class="font-semibold text-slate-700 mb-3">📍 지역별 계약 현황 분석</h3>
+      <div class="flex gap-2">
+        <input type="text" x-model="regionInput"
+               placeholder="지역명 입력 (예: 서울, 경기, 부산)"
+               class="flex-1 border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+               @keydown.enter="search()">
+        <button @click="search()" :disabled="loading || !regionInput.trim()"
+                class="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          <span x-show="!loading">조회</span>
+          <span x-show="loading">분석중...</span>
+        </button>
+      </div>
+    </div>
+
+    <div x-show="searched && !loading">
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <div class="bg-white rounded-xl border border-slate-100 p-4 text-center shadow-sm">
+          <div class="text-xs text-slate-500 mb-1">총 계약 건수</div>
+          <div class="text-2xl font-black text-slate-700" x-text="total + '건'"></div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 p-4 text-center shadow-sm">
+          <div class="text-xs text-slate-500 mb-1">분석 지역</div>
+          <div class="text-sm font-bold text-blue-600" x-text="regionInput"></div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 p-4 text-center shadow-sm">
+          <div class="text-xs text-slate-500 mb-1">분석 일시</div>
+          <div class="text-sm font-bold text-slate-600" x-text="analysisDate"></div>
+        </div>
+      </div>
+      <div x-show="labels.length > 0" class="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+        <h3 class="font-semibold text-slate-800 mb-4">업체별 수주 현황 (상위 15개)</h3>
+        <div style="height:360px"><canvas id="marketRegionChart"></canvas></div>
+      </div>
+      <div x-show="labels.length === 0" class="bg-white rounded-xl border border-slate-100 shadow-sm p-8 text-center text-slate-400 text-sm">
+        해당 지역의 데이터가 없습니다.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PALETTE = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16','#ec4899','#14b8a6'];
+let reportChartsInited = false;
+
+function marketTabs() {
+  return {
+    tab: '{{ "report" if report else "data" }}',
+    switchTab(t) {
+      this.tab = t;
+      if (t === 'report' && !reportChartsInited) {
+        this.$nextTick(() => initReportCharts());
+      }
+    },
+    init() {
+      // 초기 탭이 report이면 바로 차트 초기화
+      if (this.tab === 'report') {
+        this.$nextTick(() => initReportCharts());
+      }
+    }
+  };
+}
+
+{% if report %}
+function initReportCharts() {
+  if (reportChartsInited) return;
+  reportChartsInited = true;
+
+  // ── 월별 수주 트렌드 ──────────────────────────────────────────
+  const trendLabels  = {{ report.trend_labels | safe }};
+  const trendAmounts = {{ report.trend_amounts | safe }};
+  const cumul = trendAmounts.reduce((acc,v,i) => { acc.push(parseFloat(((acc[i-1]||0)+v).toFixed(2))); return acc; }, []);
+  const tCtx = document.getElementById('trendChart');
+  if (tCtx) {
+    new Chart(tCtx, {
+      data: {
+        labels: trendLabels,
+        datasets: [
+          { type:'bar', label:'계약금액(억)', data:trendAmounts, backgroundColor:'#3b82f6', yAxisID:'y', order:1 },
+          { type:'line', label:'누적(억)', data:cumul, borderColor:'#f59e0b', backgroundColor:'transparent',
+            yAxisID:'y2', tension:0.3, order:0, pointRadius:3 }
+        ]
+      },
+      options: { responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{position:'top'} },
+        scales:{ x:{ticks:{maxRotation:40,font:{size:10}}},
+          y:{title:{display:true,text:'억원'}},
+          y2:{position:'right',title:{display:true,text:'누적(억)'},grid:{drawOnChartArea:false}} } }
+    });
+  }
+
+  // ── 카테고리별 납품 구성 ──────────────────────────────────────
+  const catLabels  = {{ report.cat_labels | safe }};
+  const catAmounts = {{ report.cat_amounts | safe }};
+  const catCounts  = {{ report.cat_counts | safe }};
+  const cCtx = document.getElementById('catChart');
+  if (cCtx && catLabels.length > 0) {
+    new Chart(cCtx, {
+      type: 'doughnut',
+      data: { labels: catLabels, datasets: [{ data: catAmounts, backgroundColor: PALETTE, borderWidth: 2 }] },
+      options: { responsive:true, maintainAspectRatio:false, cutout:'45%',
+        plugins: { legend:{position:'right',labels:{font:{size:11},boxWidth:12}},
+          tooltip:{ callbacks:{ label: ctx => ` ${ctx.label}: ${ctx.raw}억원 (${catCounts[ctx.dataIndex]||0}건)` } } } }
+    });
+  }
+
+  // ── 주요 발주처 TOP10 ─────────────────────────────────────────
+  const agencyTop10Labels = {{ report.agency_top10_labels | safe }};
+  const agencyTop10Counts = {{ report.agency_top10_counts | safe }};
+  const aCtx = document.getElementById('agencyChart');
+  if (aCtx && agencyTop10Labels.length > 0) {
+    new Chart(aCtx, {
+      type: 'bar',
+      data: { labels: agencyTop10Labels,
+        datasets: [{ label:'건수', data: agencyTop10Counts, backgroundColor: PALETTE.slice(0, agencyTop10Labels.length) }] },
+      options: { indexAxis:'y', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false} },
+        scales:{ x:{title:{display:true,text:'건수'},ticks:{stepSize:1}}, y:{ticks:{font:{size:10}}} } }
+    });
+  }
+}
+{% else %}
+function initReportCharts() {}
+{% endif %}
+
+// ── 지역분석 Alpine 컴포넌트 ──────────────────────────────────
+function marketRegion() {
+  return {
+    regionInput: '',
+    loading: false,
+    searched: false,
+    total: 0,
+    labels: [],
+    amounts: [],
+    counts: [],
+    analysisDate: '',
+    chart: null,
+
+    async search() {
+      if (!this.regionInput.trim()) return;
+      this.loading = true;
+      const q = encodeURIComponent(this.regionInput.trim());
+      try {
+        const res = await apiFetch(`/api/market/region?region=${q}`);
+        this.total   = res.total   || 0;
+        this.labels  = res.labels  || [];
+        this.amounts = res.amounts || [];
+        this.counts  = res.counts  || [];
+        this.analysisDate = `{{ s_date }} ~ {{ e_date }}`;
+        this.searched = true;
+        await this.$nextTick();
+        this.renderChart();
+      } catch(e) {
+        showToast('조회 실패: ' + e.message, 'error');
+      }
+      this.loading = false;
+    },
+    renderChart() {
+      const ctx = document.getElementById('marketRegionChart');
+      if (!ctx || !this.labels.length) return;
+      if (this.chart) this.chart.destroy();
+      this.chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: this.labels,
+          datasets: [
+            { label: '금액 (만원)', data: this.amounts, backgroundColor: '#3b82f6', yAxisID: 'y', order: 1 },
+            { label: '건수', data: this.counts, type: 'line', borderColor: '#f59e0b',
+              backgroundColor: 'transparent', yAxisID: 'y2', tension: 0.3, order: 0 },
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            x: { ticks: { maxRotation: 40, font: { size: 11 } } },
+            y: { title: { display: true, text: '금액 (만원)' } },
+            y2: { position: 'right', title: { display: true, text: '건수' }, grid: { drawOnChartArea: false } },
+          }
+        }
+      });
+    }
+  };
+}
+</script>
+{% endblock %}

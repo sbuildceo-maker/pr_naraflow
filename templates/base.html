@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}NARA BID{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak] { display: none !important; }
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600;
+    }
+    .kanban-col { min-height: 300px; }
+    .card-hover { transition: box-shadow .15s; }
+    .card-hover:hover { box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9px; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans" x-data="{ sidebarOpen: window.innerWidth >= 768 }">
+
+<!-- 사이드바 -->
+<aside :class="sidebarOpen ? 'w-56' : 'w-14'"
+       class="fixed top-0 left-0 h-full bg-slate-900 flex flex-col z-40 transition-all duration-200 overflow-hidden">
+  <!-- 로고 -->
+  <div class="flex items-center gap-3 px-4 py-5 border-b border-slate-700">
+    <span class="text-blue-400 text-xl font-black shrink-0">N</span>
+    <span x-show="sidebarOpen" class="text-white font-bold text-sm whitespace-nowrap">NARA BID</span>
+  </div>
+
+  <!-- 회사/사용자 -->
+  <div x-show="sidebarOpen" class="px-4 py-3 border-b border-slate-700">
+    <p class="text-slate-400 text-xs">{{ user.companies.name if user.companies else '' }}</p>
+    <p class="text-white text-sm font-medium mt-0.5">{{ user.name }}</p>
+  </div>
+
+  <!-- 메뉴 -->
+  <nav class="flex-1 py-3">
+    {% set nav = [
+      ('/', '🏠', '메인 대시보드'),
+      ('/service', '🛠️', '용역현황'),
+      ('/market', '📝', '계약현황'),
+      ('/bid', '📢', '입찰공고'),
+      ('/mypage', '⚙️', '마이페이지'),
+    ] %}
+    {% for href, icon, label in nav %}
+    <a href="{{ href }}"
+       class="flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800 transition-colors
+              {% if request.url.path == href %}bg-slate-800 text-white border-l-2 border-blue-400{% endif %}">
+      <span class="text-lg shrink-0">{{ icon }}</span>
+      <span x-show="sidebarOpen" class="text-sm whitespace-nowrap">{{ label }}</span>
+    </a>
+    {% endfor %}
+  </nav>
+
+  <!-- 로그아웃 -->
+  <div class="border-t border-slate-700 p-3">
+    <a href="/logout" class="flex items-center gap-3 px-2 py-2 text-slate-400 hover:text-red-400 transition-colors">
+      <span class="shrink-0">🔓</span>
+      <span x-show="sidebarOpen" class="text-sm">로그아웃</span>
+    </a>
+  </div>
+</aside>
+
+<!-- 토글 버튼 -->
+<button @click="sidebarOpen=!sidebarOpen"
+        :class="sidebarOpen ? 'left-56' : 'left-14'"
+        class="fixed top-4 z-50 bg-slate-700 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs transition-all duration-200 shadow">
+  <span x-text="sidebarOpen ? '◀' : '▶'"></span>
+</button>
+
+<!-- 메인 콘텐츠 -->
+<main :class="sidebarOpen ? 'ml-56' : 'ml-14'" class="min-h-screen transition-all duration-200 p-6">
+  <!-- 토스트 -->
+  <div id="toast" class="fixed top-4 right-4 z-50 hidden">
+    <div class="bg-green-500 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium" id="toast-msg"></div>
+  </div>
+
+  {% block content %}{% endblock %}
+</main>
+
+<script>
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  const m = document.getElementById('toast-msg');
+  m.textContent = msg;
+  t.firstElementChild.className = `bg-${type==='success'?'green':'red'}-500 text-white px-5 py-3 rounded-xl shadow-lg text-sm font-medium`;
+  t.classList.remove('hidden');
+  setTimeout(() => t.classList.add('hidden'), 3000);
+}
+
+async function apiFetch(url, options={}) {
+  const res = await fetch(url, { headers: {'Content-Type':'application/json'}, ...options });
+  return res.json();
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

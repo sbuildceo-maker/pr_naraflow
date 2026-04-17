@@ -1,0 +1,746 @@
+{% extends "base.html" %}
+{% block title %}용역현황 — NARA BID{% endblock %}
+
+{% block content %}
+{% set status_bg = {
+  '신규':'bg-blue-100 text-blue-700',
+  '연락완료':'bg-yellow-100 text-yellow-700',
+  '계약성사':'bg-green-100 text-green-700',
+  '확인완료':'bg-red-100 text-red-700'
+} %}
+{% set status_border = {
+  '신규':'border-blue-300',
+  '연락완료':'border-yellow-300',
+  '계약성사':'border-green-300',
+  '확인완료':'border-red-300'
+} %}
+
+<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+  <div>
+    <h1 class="text-2xl font-bold">🛠️ 용역 파이프라인 CRM</h1>
+    <p class="text-slate-500 text-sm mt-0.5">{{ user.get('companies',{}).get('name','') }} | {{ user.get('name','') }}님</p>
+  </div>
+  {% if db_range.oldest %}
+  <div class="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2 text-xs text-blue-700">
+    <span class="font-medium">📦 적재 데이터</span>
+    <span class="text-blue-500">{{ db_range.oldest[:10] }} ~ {{ db_range.newest[:10] }}</span>
+    <span class="bg-blue-100 text-blue-700 rounded-full px-2 py-0.5 font-semibold">총 {{ "{:,}".format(db_range.total) }}건</span>
+  </div>
+  {% endif %}
+</div>
+
+<!-- 필터 바 -->
+<form method="get" action="/service" class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 mb-5">
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div>
+      <label class="text-xs font-medium text-slate-500 block mb-1">시작일</label>
+      <input type="date" name="s_date" value="{{ s_date }}"
+             class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+    </div>
+    <div>
+      <label class="text-xs font-medium text-slate-500 block mb-1">종료일</label>
+      <input type="date" name="e_date" value="{{ e_date }}"
+             class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+    </div>
+    <div class="sm:col-span-2">
+      <label class="text-xs font-medium text-slate-500 block mb-1">검색어</label>
+      <div class="flex gap-2">
+        <input type="text" name="search" value="{{ search }}" placeholder="계약명, 수요기관, 업체명 검색..."
+               class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">조회</button>
+      </div>
+    </div>
+  </div>
+</form>
+
+<!-- KPI 요약 -->
+<div class="grid grid-cols-3 sm:grid-cols-5 gap-3 mb-5">
+  {% for label, val, color in [
+    ('전체', stats.total, 'slate'),
+    ('🟢 성사', stats.success, 'green'),
+    ('🔴 확인완료', stats.fail, 'red'),
+    ('🟡 진행중', stats.active, 'yellow'),
+    ('내 담당', stats.mine, 'blue'),
+  ] %}
+  <div class="bg-white rounded-xl border border-slate-100 p-4 text-center shadow-sm">
+    <div class="text-xs text-slate-500 mb-1">{{ label }}</div>
+    <div class="text-2xl font-black text-{{ color }}-600">{{ val }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- 탭 -->
+<div x-data="{ tab: 'all' }">
+  <div class="flex gap-1 bg-slate-100 p-1 rounded-xl mb-5 flex-wrap">
+    {% for tid, tlabel in [('all','🌐 전체'), ('mine','👤 내담당'), ('analysis','📊 업체분석'), ('region_analysis','📍 지역분석')] %}
+    <button @click="tab='{{ tid }}'"
+            :class="tab==='{{ tid }}' ? 'bg-white shadow text-blue-600 font-semibold' : 'text-slate-500 hover:text-slate-700'"
+            class="px-4 py-2 rounded-lg text-sm transition-all">{{ tlabel }}</button>
+    {% endfor %}
+  </div>
+
+  <!-- ── 전체 리스트 ── -->
+  <div x-show="tab==='all'" x-cloak>
+    {% for row in data %}
+    {% set s = row.status or '신규' %}
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 mb-3 card-hover flex items-start justify-between gap-4">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-1.5">
+          <span class="status-badge {{ status_bg.get(s, 'bg-slate-100 text-slate-600') }}">{{ STATUS_EMOJI.get(s,'⚪') }} {{ s }}</span>
+          <span class="font-semibold text-sm text-slate-800 truncate">{{ row.contract_name }}</span>
+        </div>
+        <div class="text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5">
+          <span>📅 {{ row.contract_date }}</span>
+          <span>🏢 {{ row.agency }}</span>
+          {% if row.company_name %}<span>🏭 {{ row.company_name }}</span>{% endif %}
+          <span>💰 {{ "{:,}".format((row.amount or 0)|int) }}원</span>
+          <span>👤 {{ row.claimed_by or '미배정' }}</span>
+          {% if row.is_external %}<span class="text-purple-500">🤝 외부: {{ row.external_name }}</span>{% endif %}
+        </div>
+        {% if row.company_phone or row.company_address %}
+        <div class="text-xs text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+          {% if row.company_phone %}<span>📞 {{ row.company_phone }}</span>{% endif %}
+          {% if row.company_address %}<span>📍 {{ row.company_address[:40] }}</span>{% endif %}
+        </div>
+        {% endif %}
+        {% if row.fail_reason %}<div class="text-xs text-red-400 mt-0.5">❌ {{ row.fail_reason[:40] }}</div>{% endif %}
+        {% if row.remarks %}<div class="text-xs text-slate-400 mt-0.5 truncate">📝 {{ row.remarks[:60] }}</div>{% endif %}
+      </div>
+      <div class="flex flex-col gap-1 shrink-0">
+        <button class="edit-btn bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                data-id="{{ row.id }}"
+                data-row='{{ row | tojson }}'>✏️ 편집</button>
+        {% if not row.claimed_by or row.claimed_by in ('', '미정') %}
+        <button onclick="claimRow('{{ row.id }}', this)"
+                class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">🙋 클레임</button>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <p class="text-slate-400 text-sm text-center py-10">데이터가 없습니다.</p>
+    {% endfor %}
+  </div>
+
+  <!-- ── 내담당 탭 (지역관리 + 내 클레임) ── -->
+  <div x-show="tab==='mine'" x-cloak x-data="mineTab()">
+    <!-- 지역 관리 -->
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5 mb-4">
+      <h3 class="font-semibold text-slate-700 mb-3">📍 내 담당 지역 관리</h3>
+      <div class="flex gap-2 mb-3">
+        <input type="text" x-model="newRegion"
+               placeholder="지역명 입력 (예: 서울, 경기, 부산)"
+               class="flex-1 border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+               @keydown.enter="addRegion()">
+        <button @click="addRegion()"
+                class="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">추가</button>
+      </div>
+      <div class="flex flex-wrap gap-2" x-show="regions.length > 0">
+        <template x-for="(r, idx) in regions" :key="idx">
+          <span class="inline-flex items-center gap-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1 text-sm font-medium">
+            📍 <span x-text="r"></span>
+            <button @click="removeRegion(idx)" class="text-blue-400 hover:text-red-500 font-bold leading-none ml-0.5">×</button>
+          </span>
+        </template>
+      </div>
+      <p x-show="regions.length === 0" class="text-slate-400 text-sm">지역을 추가하면 해당 지역의 데이터가 자동 필터링됩니다.</p>
+    </div>
+
+    <!-- 지역 필터 결과 -->
+    <div x-show="regions.length > 0" class="mb-6">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-semibold text-slate-700">
+          📋 지역 필터 결과 (<span x-text="filteredData.length"></span>건)
+        </h3>
+        <button x-show="unassignedIds.length > 0"
+                @click="autoAssign()" :disabled="assigning"
+                class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50">
+          <span x-show="!assigning">🙋 미배정 <span x-text="unassignedIds.length"></span>건 → 내 담당 분배</span>
+          <span x-show="assigning">분배중...</span>
+        </button>
+      </div>
+      <template x-for="row in filteredData" :key="row.id">
+        <div class="bg-white rounded-xl border shadow-sm p-4 mb-3 flex items-start justify-between gap-4"
+             :class="(!row.claimed_by || row.claimed_by==='미정') ? 'border-orange-200' : 'border-slate-100'">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1.5">
+              <span class="text-xs px-2 py-0.5 rounded-full font-medium"
+                    :class="statusBg(row.status||'신규')" x-text="(row.status||'신규')"></span>
+              <span class="font-semibold text-sm text-slate-800 truncate" x-text="row.contract_name"></span>
+            </div>
+            <div class="text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5">
+              <span x-text="'📅 ' + (row.contract_date||'')"></span>
+              <span x-text="'🏢 ' + (row.agency||'')"></span>
+              <span x-show="row.company_name" x-text="'🏭 ' + (row.company_name||'')"></span>
+              <span x-text="'💰 ' + Number(row.amount||0).toLocaleString() + '원'"></span>
+              <span x-text="'👤 ' + (row.claimed_by||'미배정')"></span>
+            </div>
+          </div>
+        </div>
+      </template>
+      <p x-show="filteredData.length === 0" class="text-slate-400 text-sm text-center py-6">해당 지역의 데이터가 없습니다.</p>
+    </div>
+
+    <!-- 내 클레임 리스트/칸반 -->
+    <div x-data="{ view: 'list' }">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-semibold text-slate-700">👤 내 담당 목록</h3>
+        <div class="flex gap-2">
+          <button @click="view='list'"
+                  :class="view==='list' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-300'"
+                  class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">📋 리스트</button>
+          <button @click="view='kanban'"
+                  :class="view==='kanban' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-300'"
+                  class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">🗂️ 칸반</button>
+        </div>
+      </div>
+
+      <div x-show="view==='list'">
+        {% for row in mine_data %}
+        {% set s = row.status or '신규' %}
+        <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 mb-3 card-hover flex items-start justify-between gap-4">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1.5">
+              <span class="status-badge {{ status_bg.get(s,'bg-slate-100 text-slate-600') }}">{{ STATUS_EMOJI.get(s,'⚪') }} {{ s }}</span>
+              <span class="font-semibold text-sm text-slate-800 truncate">{{ row.contract_name }}</span>
+            </div>
+            <div class="text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5">
+              <span>📅 {{ row.contract_date }}</span>
+              <span>🏢 {{ row.agency }}</span>
+              {% if row.company_name %}<span>🏭 {{ row.company_name }}</span>{% endif %}
+              <span>💰 {{ "{:,}".format((row.amount or 0)|int) }}원</span>
+              {% if row.fail_reason %}<span class="text-red-500">❌ {{ row.fail_reason[:25] }}</span>{% endif %}
+            </div>
+            {% if row.remarks %}<div class="text-xs text-slate-400 mt-1 truncate">📝 {{ row.remarks[:60] }}</div>{% endif %}
+          </div>
+          <button class="edit-btn shrink-0 bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                  data-id="{{ row.id }}"
+                  data-row='{{ row | tojson }}'>✏️ 편집</button>
+        </div>
+        {% else %}
+        <p class="text-slate-400 text-sm text-center py-10">담당 중인 건이 없습니다. 전체 탭에서 클레임하세요.</p>
+        {% endfor %}
+      </div>
+
+      <div x-show="view==='kanban'" class="overflow-x-auto pb-4">
+        <div class="flex gap-3 min-w-max">
+          {% for s in STATUS_LIST %}
+          {% set col_data = kanban.get(s, []) %}
+          <div class="w-60 kanban-col">
+            <div class="flex items-center justify-between mb-3">
+              <span class="status-badge {{ status_bg.get(s,'') }}">{{ STATUS_EMOJI.get(s,'') }} {{ s }}</span>
+              <span class="text-xs text-slate-400">{{ col_data|length }}건</span>
+            </div>
+            <div class="space-y-2">
+              {% for row in col_data %}
+              <div class="bg-white border {{ status_border.get(s,'border-slate-200') }} rounded-xl p-3 card-hover cursor-pointer edit-btn"
+                   data-id="{{ row.id }}"
+                   data-row='{{ row | tojson }}'>
+                <p class="font-medium text-xs text-slate-800 mb-1.5 line-clamp-2">{{ row.contract_name }}</p>
+                <p class="text-xs text-slate-500">🏢 {{ (row.agency or '')[:14] }}</p>
+                {% if row.company_name %}<p class="text-xs text-slate-500">🏭 {{ (row.company_name or '')[:14] }}</p>{% endif %}
+                <p class="text-xs text-slate-500">💰 {{ "{:,}".format((row.amount or 0)|int) }}원</p>
+                {% if row.fail_reason %}<p class="text-xs text-red-400 mt-1">❌ {{ row.fail_reason[:20] }}</p>{% endif %}
+              </div>
+              {% else %}
+              <div class="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center text-xs text-slate-400">비어있음</div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 업체분석 탭 ── -->
+  <div x-show="tab==='analysis'" x-cloak x-data="companyAnalysis()">
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5 mb-4">
+      <div class="flex gap-2">
+        {% set companies = data | map(attribute='company_name') | select | unique | sort | list %}
+        <datalist id="svc-company-list">
+          {% for c in companies %}<option value="{{ c }}">{% endfor %}
+        </datalist>
+        <input type="text" x-model="company" list="svc-company-list"
+               placeholder="업체명 선택 또는 직접 입력..."
+               class="flex-1 border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+               @keydown.enter="fetchData()">
+        <button @click="fetchData()" :disabled="loading || !company"
+                class="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          <span x-show="!loading">분석</span>
+          <span x-show="loading">분석중...</span>
+        </button>
+      </div>
+    </div>
+
+    <div x-show="result && !loading">
+      <!-- KPI 카드 -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
+        <div class="bg-white rounded-xl border border-slate-100 p-4 text-center shadow-sm">
+          <div class="text-xs text-slate-500 mb-1">총 건수</div>
+          <div class="text-2xl font-black text-slate-700" x-text="(result.total||0) + '건'"></div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 p-4 text-center shadow-sm">
+          <div class="text-xs text-slate-500 mb-1">계약 성사</div>
+          <div class="text-2xl font-black text-green-600" x-text="(result.success_cnt||0) + '건'"></div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 p-4 text-center shadow-sm">
+          <div class="text-xs text-slate-500 mb-1">총 계약 금액</div>
+          <div class="text-xl font-black text-blue-600" x-text="fmtAmt(result.total_amount)"></div>
+        </div>
+      </div>
+      <!-- 차트 3개 -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5 lg:col-span-2">
+          <h4 class="font-semibold text-slate-700 mb-3">📈 월별 수주 트렌드</h4>
+          <div style="height:260px"><canvas id="svcMonthlyChart"></canvas></div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+          <h4 class="font-semibold text-slate-700 mb-3">🗂️ 카테고리별 납품 구성</h4>
+          <div style="height:280px"><canvas id="svcCatChart"></canvas></div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+          <h4 class="font-semibold text-slate-700 mb-3">🏛️ 주요 발주처 TOP10</h4>
+          <div style="height:280px"><canvas id="svcAgencyChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 지역분석 탭 ── -->
+  <div x-show="tab==='region_analysis'" x-cloak x-data="regionAnalysis()">
+    <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-5 mb-4">
+      <h3 class="font-semibold text-slate-700 mb-3">📍 지역별 용역 현황 분석</h3>
+      <div class="flex gap-2">
+        <input type="text" x-model="regionInput"
+               placeholder="지역명 입력 (예: 서울, 경기, 부산)"
+               class="flex-1 border border-slate-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+               @keydown.enter="search()">
+        <button @click="search()" :disabled="loading || !regionInput.trim()"
+                class="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+          <span x-show="!loading">조회</span>
+          <span x-show="loading">분석중...</span>
+        </button>
+      </div>
+    </div>
+
+    <div x-show="searched && !loading">
+      <div class="grid grid-cols-3 gap-3 mb-4">
+        <div class="bg-white rounded-xl border border-slate-100 p-4 text-center shadow-sm">
+          <div class="text-xs text-slate-500 mb-1">총 계약 건수</div>
+          <div class="text-2xl font-black text-slate-700" x-text="total + '건'"></div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 p-4 text-center shadow-sm">
+          <div class="text-xs text-slate-500 mb-1">미배정 건수</div>
+          <div class="text-2xl font-black text-orange-500" x-text="unassignedCount + '건'"></div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 p-4 text-center shadow-sm">
+          <div class="text-xs text-slate-500 mb-1">분석 지역</div>
+          <div class="text-sm font-bold text-blue-600" x-text="regionInput"></div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-100 p-4 text-center shadow-sm">
+          <div class="text-xs text-slate-500 mb-1">분석 일시</div>
+          <div class="text-sm font-bold text-slate-600" x-text="analysisDate"></div>
+        </div>
+      </div>
+      <div x-show="labels.length > 0" class="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+        <h3 class="font-semibold text-slate-800 mb-4">업체별 수주 현황 (상위 15개)</h3>
+        <div style="height:360px"><canvas id="regionAnalysisChart"></canvas></div>
+      </div>
+      <div x-show="labels.length === 0" class="bg-white rounded-xl border border-slate-100 shadow-sm p-8 text-center text-slate-400 text-sm">
+        해당 지역의 데이터가 없습니다.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 편집 모달 -->
+<div id="editModal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4" onclick="if(event.target===this)closeModal()">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+    <div class="p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="font-bold text-lg">계약 상세 / 영업 현황</h2>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 text-2xl leading-none">×</button>
+      </div>
+      <div id="modal-contract-name" class="font-semibold text-slate-800 mb-1"></div>
+      <div id="modal-meta" class="text-xs text-slate-500 mb-1"></div>
+      <div id="modal-company" class="text-xs text-blue-600 mb-0.5"></div>
+      <div id="modal-contact" class="text-xs text-slate-400 mb-4"></div>
+      <hr class="mb-4">
+
+      <input type="hidden" id="modal-id">
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <label class="text-xs font-medium text-slate-600 block mb-1">진행 상태</label>
+          <select id="modal-status" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" onchange="toggleFailReason()">
+            {% for s in STATUS_LIST %}<option value="{{ s }}">{{ STATUS_EMOJI.get(s,'') }} {{ s }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-slate-600 block mb-1">담당자</label>
+          <select id="modal-manager" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+            {% for m in managers %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 mb-3">
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="modal-external" class="rounded text-blue-500" onchange="toggleExtName()">
+          <span class="font-medium">🤝 외부 영업자 개입</span>
+        </label>
+        <input type="text" id="modal-ext-name" placeholder="외부 영업자명"
+               class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-slate-50 disabled:text-slate-400"
+               disabled>
+      </div>
+
+      <div id="fail-reason-wrap" class="mb-3 hidden">
+        <label class="text-xs font-medium text-slate-600 block mb-1">❌ 확인 완료 사유</label>
+        <select id="modal-fail-type" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-blue-400" onchange="toggleFailCustom()">
+          <option value="">선택하세요</option>
+          {% for f in FAIL_OPTIONS %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+          <option value="직접입력">직접 입력</option>
+        </select>
+        <textarea id="modal-fail-custom" rows="2" placeholder="사유를 직접 입력하세요"
+                  class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm hidden focus:outline-none focus:ring-2 focus:ring-blue-400"></textarea>
+      </div>
+
+      <div class="mb-4">
+        <label class="text-xs font-medium text-slate-600 block mb-1">📝 비고 / 메모</label>
+        <textarea id="modal-remarks" rows="3" placeholder="업체 연락 일시, 미팅 내용..."
+                  class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"></textarea>
+      </div>
+
+      <div class="flex gap-2">
+        <button onclick="saveModal()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg text-sm font-semibold transition-colors">💾 저장</button>
+        <button onclick="confirmDelete()" class="bg-red-50 hover:bg-red-100 text-red-600 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors border border-red-200">🗑️ 삭제</button>
+        <button onclick="closeModal()" class="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-lg text-sm font-medium transition-colors">취소</button>
+      </div>
+
+      <div id="delete-confirm" class="hidden mt-3 p-3 bg-red-50 rounded-lg border border-red-200">
+        <p class="text-sm text-red-700 mb-2 font-medium">⚠️ 정말 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</p>
+        <div class="flex gap-2">
+          <button onclick="doDelete()" class="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-sm font-semibold transition-colors">삭제 확인</button>
+          <button onclick="document.getElementById('delete-confirm').classList.add('hidden')" class="flex-1 bg-white border border-slate-300 text-slate-700 py-2 rounded-lg text-sm transition-colors">취소</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── 전체 데이터 JS 배열 (내담당 탭 클라이언트 필터링용) ──
+const SERVICE_DATA = {{ data | tojson }};
+const FILTER_S_DATE = '{{ s_date }}';
+const FILTER_E_DATE = '{{ e_date }}';
+
+// ── 편집 버튼 이벤트 위임 ──────────────────────────────────────
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.edit-btn');
+  if (!btn) return;
+  const id  = btn.dataset.id;
+  const row = JSON.parse(btn.dataset.row || '{}');
+  openEditModal(id, row);
+});
+
+// ── 편집 모달 ─────────────────────────────────────────────────
+function openEditModal(id, row) {
+  document.getElementById('modal-id').value = id;
+  document.getElementById('modal-contract-name').textContent = row.contract_name || '';
+  document.getElementById('modal-meta').textContent =
+    `📅 ${row.contract_date||''} | 🏢 ${row.agency||''} | 💰 ${(row.amount||0).toLocaleString()}원`;
+  document.getElementById('modal-company').textContent = row.company_name ? `🏭 ${row.company_name}` : '';
+  const contact = [
+    row.company_phone ? `📞 ${row.company_phone}` : '',
+    row.company_address ? `📍 ${row.company_address}` : ''
+  ].filter(Boolean).join('  ');
+  document.getElementById('modal-contact').textContent = contact;
+
+  const status = row.status === '계약불발' ? '확인완료' : (row.status || '신규');
+  document.getElementById('modal-status').value   = status;
+  document.getElementById('modal-manager').value  = row.claimed_by || row.manager || '미정';
+  document.getElementById('modal-external').checked = !!row.is_external;
+  document.getElementById('modal-ext-name').value = row.external_name || '';
+  document.getElementById('modal-remarks').value  = row.remarks || '';
+  document.getElementById('modal-fail-type').value = '';
+  document.getElementById('modal-fail-custom').value = row.fail_reason || '';
+  document.getElementById('delete-confirm').classList.add('hidden');
+  toggleExtName();
+  toggleFailReason();
+  document.getElementById('editModal').classList.remove('hidden');
+}
+function closeModal() {
+  document.getElementById('editModal').classList.add('hidden');
+  document.getElementById('delete-confirm').classList.add('hidden');
+}
+function toggleFailReason() {
+  const v = document.getElementById('modal-status').value;
+  document.getElementById('fail-reason-wrap').classList.toggle('hidden', v !== '확인완료');
+}
+function toggleExtName() {
+  const cb = document.getElementById('modal-external');
+  document.getElementById('modal-ext-name').disabled = !cb.checked;
+}
+function toggleFailCustom() {
+  const v = document.getElementById('modal-fail-type').value;
+  document.getElementById('modal-fail-custom').classList.toggle('hidden', v !== '직접입력');
+}
+async function saveModal() {
+  const id = document.getElementById('modal-id').value;
+  const failType   = document.getElementById('modal-fail-type').value;
+  const failReason = failType === '직접입력'
+    ? document.getElementById('modal-fail-custom').value
+    : failType;
+  const payload = {
+    status:        document.getElementById('modal-status').value,
+    claimed_by:    document.getElementById('modal-manager').value,
+    is_external:   document.getElementById('modal-external').checked,
+    external_name: document.getElementById('modal-ext-name').value,
+    fail_reason:   failReason,
+    remarks:       document.getElementById('modal-remarks').value,
+  };
+  try {
+    await apiFetch(`/api/service/update/${id}`, {method:'POST', body: JSON.stringify(payload)});
+    showToast('✅ 저장되었습니다!');
+    closeModal();
+    setTimeout(() => location.reload(), 800);
+  } catch(e) {
+    showToast('저장 실패: ' + e.message, 'error');
+  }
+}
+function confirmDelete() {
+  document.getElementById('delete-confirm').classList.remove('hidden');
+}
+async function doDelete() {
+  const id = document.getElementById('modal-id').value;
+  try {
+    await apiFetch(`/api/service/delete/${id}`, {method:'POST'});
+    showToast('🗑️ 삭제되었습니다.');
+    closeModal();
+    setTimeout(() => location.reload(), 800);
+  } catch(e) {
+    showToast('삭제 실패: ' + e.message, 'error');
+  }
+}
+
+// ── 클레임 ─────────────────────────────────────────────────────
+async function claimRow(id, btn) {
+  btn.disabled = true;
+  btn.textContent = '처리중...';
+  try {
+    const res = await apiFetch(`/api/service/claim/${id}`, {method:'POST'});
+    showToast(`✅ ${res.name}님 담당으로 클레임되었습니다!`);
+    setTimeout(() => location.reload(), 900);
+  } catch(e) {
+    showToast('클레임 실패', 'error');
+    btn.disabled = false; btn.textContent = '🙋 클레임';
+  }
+}
+
+// ── 내담당 탭 Alpine 컴포넌트 ──────────────────────────────────
+function mineTab() {
+  const STORAGE_KEY = 'my_regions_v2';
+  return {
+    regions: JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'),
+    newRegion: '',
+    assigning: false,
+
+    get filteredData() {
+      if (!this.regions.length) return [];
+      return SERVICE_DATA.filter(row =>
+        this.regions.some(r => (row.agency || '').includes(r))
+      );
+    },
+    get unassignedIds() {
+      return this.filteredData
+        .filter(row => !row.claimed_by || row.claimed_by === '미정')
+        .map(row => row.id);
+    },
+    statusBg(s) {
+      const map = {
+        '신규':'bg-blue-100 text-blue-700',
+        '연락완료':'bg-yellow-100 text-yellow-700',
+        '계약성사':'bg-green-100 text-green-700',
+        '확인완료':'bg-red-100 text-red-700',
+      };
+      return map[s] || 'bg-slate-100 text-slate-600';
+    },
+    addRegion() {
+      const r = this.newRegion.trim();
+      if (!r || this.regions.includes(r)) { this.newRegion = ''; return; }
+      this.regions.push(r);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.regions));
+      this.newRegion = '';
+    },
+    removeRegion(idx) {
+      this.regions.splice(idx, 1);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.regions));
+    },
+    async autoAssign() {
+      if (!this.unassignedIds.length) return;
+      this.assigning = true;
+      try {
+        const res = await apiFetch('/api/service/region/assign', {
+          method:'POST', body: JSON.stringify({ids: this.unassignedIds})
+        });
+        showToast(`✅ ${res.name}님 담당으로 ${res.count}건 분배 완료!`);
+        setTimeout(() => location.reload(), 1000);
+      } catch(e) {
+        showToast('분배 실패: ' + e.message, 'error');
+      }
+      this.assigning = false;
+    }
+  };
+}
+
+// ── 업체분석 Alpine 컴포넌트 ──────────────────────────────────
+function companyAnalysis() {
+  return {
+    company: '',
+    loading: false,
+    result: null,
+    monthChart: null,
+    catChart: null,
+    agencyChart: null,
+
+    fmtAmt(v) {
+      if (!v) return '0원';
+      if (v >= 1e8) return (v/1e8).toFixed(2) + '억원';
+      return Math.round(v/1e4).toLocaleString() + '만원';
+    },
+    topAgency() {
+      if (!this.result || !this.result.top_agencies) return '-';
+      const entries = Object.entries(this.result.top_agencies);
+      if (!entries.length) return '-';
+      return entries[0][0].substring(0, 14);
+    },
+    async fetchData() {
+      if (!this.company) return;
+      this.loading = true;
+      this.result = null;
+      try {
+        this.result = await apiFetch(`/api/service/company_analysis?company=${encodeURIComponent(this.company)}`);
+        await this.$nextTick();
+        this.renderCharts();
+      } catch(e) {
+        showToast('분석 실패: ' + e.message, 'error');
+      }
+      this.loading = false;
+    },
+    renderCharts() {
+      const PALETTE = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16','#ec4899','#14b8a6'];
+      // 월별 트렌드
+      const mCtx = document.getElementById('svcMonthlyChart');
+      if (mCtx && this.result.monthly_labels?.length) {
+        if (this.monthChart) this.monthChart.destroy();
+        const cum = this.result.monthly_amounts.reduce((acc,v,i) => { acc.push(parseFloat(((acc[i-1]||0)+v).toFixed(2))); return acc; }, []);
+        this.monthChart = new Chart(mCtx, {
+          data: {
+            labels: this.result.monthly_labels,
+            datasets: [
+              { type:'bar', label:'계약금액(억)', data: this.result.monthly_amounts, backgroundColor:'#3b82f6', yAxisID:'y', order:1 },
+              { type:'line', label:'누적(억)', data: cum, borderColor:'#f59e0b', backgroundColor:'transparent', yAxisID:'y2', tension:0.3, order:0, pointRadius:3 }
+            ]
+          },
+          options: { responsive:true, maintainAspectRatio:false,
+            plugins:{ legend:{position:'top'} },
+            scales:{ x:{ticks:{maxRotation:40,font:{size:10}}},
+              y:{title:{display:true,text:'억원'}},
+              y2:{position:'right',title:{display:true,text:'누적(억)'},grid:{drawOnChartArea:false}} } }
+        });
+      }
+      // 카테고리 도넛
+      const cCtx = document.getElementById('svcCatChart');
+      if (cCtx) {
+        if (this.catChart) this.catChart.destroy();
+        if (this.result.cat_labels?.length) {
+          this.catChart = new Chart(cCtx, {
+            type: 'doughnut',
+            data: { labels: this.result.cat_labels, datasets: [{ data: this.result.cat_counts, backgroundColor: PALETTE, borderWidth: 2 }] },
+            options: { responsive:true, maintainAspectRatio:false, cutout:'45%',
+              plugins:{ legend:{position:'right',labels:{font:{size:11},boxWidth:12}},
+                tooltip:{ callbacks:{ label: ctx => ` ${ctx.label}: ${ctx.raw}건 (${this.result.cat_amounts[ctx.dataIndex]}억)` } } } }
+          });
+        }
+      }
+      // 발주처 TOP10
+      const aCtx = document.getElementById('svcAgencyChart');
+      if (aCtx && this.result.agency_top10_labels?.length) {
+        if (this.agencyChart) this.agencyChart.destroy();
+        this.agencyChart = new Chart(aCtx, {
+          type: 'bar',
+          data: { labels: this.result.agency_top10_labels,
+            datasets: [{ label:'건수', data: this.result.agency_top10_counts, backgroundColor:'#3b82f6' }] },
+          options: { indexAxis:'y', responsive:true, maintainAspectRatio:false,
+            plugins:{ legend:{display:false} },
+            scales:{ x:{title:{display:true,text:'건수'},ticks:{stepSize:1}}, y:{ticks:{font:{size:10}}} } }
+        });
+      }
+    }
+  };
+}
+
+// ── 지역분석 Alpine 컴포넌트 ──────────────────────────────────
+function regionAnalysis() {
+  return {
+    regionInput: '',
+    loading: false,
+    searched: false,
+    total: 0,
+    unassignedCount: 0,
+    labels: [],
+    amounts: [],
+    counts: [],
+    analysisDate: '',
+    chart: null,
+
+    async search() {
+      if (!this.regionInput.trim()) return;
+      this.loading = true;
+      const q = encodeURIComponent(this.regionInput.trim());
+      try {
+        const res = await apiFetch(`/api/service/region?region=${q}`);
+        this.total = res.total || 0;
+        this.unassignedCount = res.unassigned_count || 0;
+        this.labels  = res.labels  || [];
+        this.amounts = res.amounts || [];
+        this.counts  = res.counts  || [];
+        this.analysisDate = `${FILTER_S_DATE} ~ ${FILTER_E_DATE}`;
+        this.searched = true;
+        await this.$nextTick();
+        this.renderChart();
+      } catch(e) {
+        showToast('조회 실패: ' + e.message, 'error');
+      }
+      this.loading = false;
+    },
+    renderChart() {
+      const ctx = document.getElementById('regionAnalysisChart');
+      if (!ctx || !this.labels.length) return;
+      if (this.chart) this.chart.destroy();
+      this.chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: this.labels,
+          datasets: [
+            { label: '금액 (만원)', data: this.amounts, backgroundColor: '#3b82f6', yAxisID: 'y', order: 1 },
+            { label: '건수', data: this.counts, type: 'line', borderColor: '#f59e0b',
+              backgroundColor: 'transparent', yAxisID: 'y2', tension: 0.3, order: 0 },
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            x: { ticks: { maxRotation: 40, font: { size: 11 } } },
+            y: { title: { display: true, text: '금액 (만원)' } },
+            y2: { position: 'right', title: { display: true, text: '건수' }, grid: { drawOnChartArea: false } },
+          }
+        }
+      });
+    }
+  };
+}
+</script>
+{% endblock %}

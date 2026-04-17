@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}입찰공고 — NARA BID{% endblock %}
+{% block content %}
+<div class="mb-5 flex flex-wrap items-center justify-between gap-3">
+  <h1 class="text-2xl font-bold">📢 입찰 공고</h1>
+  {% if db_range and db_range.oldest %}
+  <div class="flex items-center gap-2 bg-orange-50 border border-orange-100 rounded-xl px-4 py-2 text-xs text-orange-700">
+    <span class="font-medium">📦 적재 데이터</span>
+    <span class="text-orange-500">{{ db_range.oldest[:10] }} ~ {{ db_range.newest[:10] }}</span>
+    <span class="bg-orange-100 text-orange-700 rounded-full px-2 py-0.5 font-semibold">총 {{ "{:,}".format(db_range.total) }}건</span>
+  </div>
+  {% endif %}
+</div>
+
+<!-- 필터 -->
+<form method="get" action="/bid" class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 mb-5">
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+    <div>
+      <label class="text-xs font-medium text-slate-500 block mb-1">시작일</label>
+      <input type="date" name="s_date" value="{{ s_date }}"
+             class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+    </div>
+    <div>
+      <label class="text-xs font-medium text-slate-500 block mb-1">종료일</label>
+      <input type="date" name="e_date" value="{{ e_date }}"
+             class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+    </div>
+    <div>
+      <label class="text-xs font-medium text-slate-500 block mb-1">검색어</label>
+      <input type="text" name="search" value="{{ search }}" placeholder="공고명, 기관명..."
+             class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+    </div>
+    <div class="flex items-end gap-2">
+      <select name="sort" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+        {% for s in ['최신순','높은금액순','기관명순'] %}
+        <option {% if sort==s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">조회</button>
+    </div>
+  </div>
+</form>
+
+<!-- 요약 -->
+<div class="grid grid-cols-2 gap-3 mb-5">
+  <div class="bg-white rounded-xl border border-slate-100 p-4 text-center shadow-sm">
+    <div class="text-xs text-slate-500 mb-1">검색 건수</div>
+    <div class="text-2xl font-black text-blue-600">{{ total_count }}건</div>
+  </div>
+  <div class="bg-white rounded-xl border border-slate-100 p-4 text-center shadow-sm">
+    <div class="text-xs text-slate-500 mb-1">총 예산 규모</div>
+    <div class="text-2xl font-black text-green-600">
+      {% if total_budget >= 100000000 %}
+        {{ "%.1f"|format(total_budget / 100000000) }}억
+      {% else %}
+        {{ "{:,}".format((total_budget // 10000)|int) }}만
+      {% endif %}원
+    </div>
+  </div>
+</div>
+
+<!-- 공고 목록 -->
+<div class="space-y-3">
+  {% for row in data %}
+  <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-4 card-hover">
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-1.5 flex-wrap">
+          {% if row.type %}
+          <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full font-medium">{{ row.type }}</span>
+          {% endif %}
+          {% if row.category %}
+          <span class="bg-blue-50 text-blue-600 text-xs px-2 py-0.5 rounded-full font-medium">{{ row.category }}</span>
+          {% endif %}
+          <span class="font-semibold text-sm text-slate-800">{{ row.title }}</span>
+        </div>
+        <div class="text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5">
+          <span>📅 {{ row.bid_date }}</span>
+          <span>🏢 {{ row.agency }}</span>
+          {% if row.budget and row.budget > 0 %}
+          <span class="font-medium text-green-600">💰 {{ "{:,}".format(row.budget|int) }}원</span>
+          {% endif %}
+        </div>
+      </div>
+      {% if row.url %}
+      <a href="{{ row.url }}" target="_blank"
+         class="shrink-0 bg-blue-50 hover:bg-blue-100 text-blue-600 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+        🔗 공고 보기
+      </a>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl p-12 text-center text-slate-400">
+    <div class="text-4xl mb-3">📭</div>
+    <p>해당 기간에 수집된 입찰 공고가 없습니다.</p>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}마이페이지 — NARA BID{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold">⚙️ 마이페이지</h1>
+  <p class="text-slate-500 text-sm mt-0.5">{{ user.email }} · {{ user.role }}</p>
+</div>
+
+<!-- 사용자 정보 -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-5">
+  <h2 class="font-semibold text-slate-800 mb-4">👤 계정 정보</h2>
+  <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+    <div><span class="text-slate-400">이름</span><p class="font-medium mt-0.5">{{ user.name }}</p></div>
+    <div><span class="text-slate-400">이메일</span><p class="font-medium mt-0.5">{{ user.email }}</p></div>
+    <div><span class="text-slate-400">권한</span><p class="font-medium mt-0.5">{{ user.role }}</p></div>
+    <div><span class="text-slate-400">회사</span><p class="font-medium mt-0.5">{{ user.get('companies',{}).get('name','') if user.companies else '' }}</p></div>
+    <div><span class="text-slate-400">전화번호</span><p class="font-medium mt-0.5">{{ user.phone_number or '-' }}</p></div>
+  </div>
+</div>
+
+<!-- 데이터 수동 적재 -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 mb-5" x-data="collectForm()">
+  <h2 class="font-semibold text-slate-800 mb-1">📥 데이터 수동 적재</h2>
+  <p class="text-xs text-slate-400 mb-4">나라장터 API에서 데이터를 직접 수집합니다. 키워드 설정이 완료된 후 사용하세요.</p>
+
+  <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+    <div>
+      <label class="text-xs font-medium text-slate-500 block mb-1">시작일</label>
+      <input type="date" x-model="sDate"
+             class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+    </div>
+    <div>
+      <label class="text-xs font-medium text-slate-500 block mb-1">종료일</label>
+      <input type="date" x-model="eDate"
+             class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+    </div>
+  </div>
+
+  <div class="flex flex-wrap gap-3 mb-4">
+    <button @click="collect('service')" :disabled="loading"
+            class="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors">
+      <span x-show="loading && activeType==='service'" class="animate-spin">⏳</span>
+      <span x-show="!(loading && activeType==='service')">🛠️</span>
+      용역 수집
+    </button>
+    <button @click="collect('market')" :disabled="loading"
+            class="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors">
+      <span x-show="loading && activeType==='market'" class="animate-spin">⏳</span>
+      <span x-show="!(loading && activeType==='market')">📝</span>
+      계약 수집
+    </button>
+    <button @click="collect('bid')" :disabled="loading"
+            class="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors">
+      <span x-show="loading && activeType==='bid'" class="animate-spin">⏳</span>
+      <span x-show="!(loading && activeType==='bid')">📢</span>
+      입찰 수집
+    </button>
+  </div>
+
+  <!-- 결과 로그 -->
+  <div x-show="logs.length > 0" class="bg-slate-50 rounded-xl border border-slate-200 p-4">
+    <template x-for="(log, i) in logs" :key="i">
+      <p class="text-xs text-slate-600 mb-0.5" x-text="log"></p>
+    </template>
+  </div>
+</div>
+
+<!-- 키워드 설정 -->
+<div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-5" x-data="keywordForm()">
+  <h2 class="font-semibold text-slate-800 mb-1">🔑 분야별 키워드 설정</h2>
+  <p class="text-xs text-slate-400 mb-5">형식: <code class="bg-slate-100 px-1 rounded">카테고리:키워드1,키워드2</code> (줄바꿈으로 여러 카테고리 입력)</p>
+
+  <!-- 탭 -->
+  <div class="flex gap-1 bg-slate-100 p-1 rounded-xl mb-5 w-fit">
+    {% for tid, tlabel in [('bid','📢 입찰'),('svc','🛠️ 용역'),('mkt','📝 계약')] %}
+    <button type="button" @click="tab='{{ tid }}'"
+            :class="tab==='{{ tid }}' ? 'bg-white shadow text-blue-600 font-semibold' : 'text-slate-500'"
+            class="px-4 py-2 rounded-lg text-sm transition-all">{{ tlabel }}</button>
+    {% endfor %}
+  </div>
+
+  {% for tid, label_inc, label_exc in [('bid','입찰 포함 키워드','입찰 제외 키워드'),('svc','용역 포함 키워드','용역 제외 키워드'),('mkt','계약 포함 키워드','계약 제외 키워드')] %}
+  <div x-show="tab==='{{ tid }}'">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="text-xs font-medium text-slate-600 block mb-1.5">{{ label_inc }}</label>
+        <textarea x-model="kw.{{ tid }}_kw" rows="6"
+                  class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 font-mono"
+                  placeholder="인조잔디:운동장,학교&#10;코르크:놀이터,공원">{{ cs.get(tid+'_kw','') }}</textarea>
+      </div>
+      <div>
+        <label class="text-xs font-medium text-slate-600 block mb-1.5">{{ label_exc }}</label>
+        <textarea x-model="kw.{{ tid }}_ex" rows="6"
+                  class="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 font-mono"
+                  placeholder="제외할 키워드1,키워드2">{{ cs.get(tid+'_ex','') }}</textarea>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="mt-4 flex gap-3 items-center">
+    <button type="button" @click="save()"
+            :disabled="saving"
+            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50">
+      <span x-show="!saving">💾 저장하기</span>
+      <span x-show="saving">저장 중...</span>
+    </button>
+    <span x-show="saved" class="text-green-600 text-sm font-medium">✅ 저장되었습니다!</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function collectForm() {
+  const today = new Date().toISOString().slice(0,10);
+  const weekAgo = new Date(Date.now() - 7*24*3600*1000).toISOString().slice(0,10);
+  return {
+    sDate: weekAgo,
+    eDate: today,
+    loading: false,
+    activeType: '',
+    logs: [],
+    async collect(type) {
+      this.loading = true;
+      this.activeType = type;
+      this.logs = [`⏳ ${type === 'service' ? '용역' : '계약'} 수집 시작 (${this.sDate} ~ ${this.eDate})...`];
+      try {
+        const res = await apiFetch('/api/mypage/collect', {
+          method: 'POST',
+          body: JSON.stringify({ type, s_date: this.sDate, e_date: this.eDate })
+        });
+        if (res.ok) {
+          this.logs.push(...(res.logs || []));
+          this.logs.push(`✅ 완료: ${res.count}건 저장됨`);
+          showToast(`✅ ${res.count}건 수집 완료!`);
+        } else {
+          this.logs.push(`❌ 오류: ${res.error}`);
+          showToast(res.error || '수집 실패', 'error');
+        }
+      } catch(e) {
+        this.logs.push(`❌ 오류: ${e.message}`);
+        showToast('수집 실패: ' + e.message, 'error');
+      }
+      this.loading = false;
+      this.activeType = '';
+    }
+  };
+}
+
+function keywordForm() {
+  return {
+    tab: 'bid',
+    saving: false,
+    saved: false,
+    kw: {
+      bid_kw: `{{ cs.get('bid_kw','') | replace('\n','\\n') | replace("'","\\'") }}`,
+      bid_ex: `{{ cs.get('bid_ex','') | replace('\n','\\n') | replace("'","\\'") }}`,
+      svc_kw: `{{ cs.get('svc_kw','') | replace('\n','\\n') | replace("'","\\'") }}`,
+      svc_ex: `{{ cs.get('svc_ex','') | replace('\n','\\n') | replace("'","\\'") }}`,
+      mkt_kw: `{{ cs.get('mkt_kw','') | replace('\n','\\n') | replace("'","\\'") }}`,
+      mkt_ex: `{{ cs.get('mkt_ex','') | replace('\n','\\n') | replace("'","\\'") }}`,
+    },
+    async save() {
+      this.saving = true;
+      try {
+        await apiFetch('/api/mypage/keywords', { method:'POST', body: JSON.stringify(this.kw) });
+        this.saved = true;
+        showToast('✅ 키워드가 저장되었습니다!');
+        setTimeout(() => this.saved = false, 3000);
+      } catch(e) {
+        showToast('저장 실패', 'error');
+      }
+      this.saving = false;
+    }
+  };
+}
+</script>
+{% endblock %}

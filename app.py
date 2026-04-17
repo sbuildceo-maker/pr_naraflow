@@ -69,7 +69,7 @@ def extract_model(product_name) -> str:
 # ── 인증 ──────────────────────────────────────────────────────────────
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, error: str = ""):
-    return templates.TemplateResponse("login.html", {"request": request, "error": error})
+    return templates.TemplateResponse(request, "login.html", {"error": error})
 
 @app.post("/login")
 async def login(request: Request, email: str = Form(...), password: str = Form(...)):
@@ -112,8 +112,8 @@ async def dashboard(request: Request):
     except Exception:
         bid_cnt = svc_cnt = mkt_cnt = 0
 
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request, "user": user, "cs": cs,
+    return templates.TemplateResponse(request, "dashboard.html", {
+        "user": user, "cs": cs,
         "yesterday": yesterday, "bid_cnt": bid_cnt, "svc_cnt": svc_cnt, "mkt_cnt": mkt_cnt,
     })
 
@@ -200,8 +200,8 @@ async def service_page(
     mine_data = [d for d in data if d.get("claimed_by") == my_name]
     kanban    = {s: [d for d in mine_data if d.get("status") == s] for s in STATUS_LIST}
 
-    return templates.TemplateResponse("service.html", {
-        "request": request, "user": user, "cs": cs,
+    return templates.TemplateResponse(request, "service.html", {
+        "user": user, "cs": cs,
         "data": data, "mine_data": mine_data, "kanban": kanban,
         "managers": managers, "stats": stats,
         "s_date": s_date, "e_date": e_date, "search": search,
@@ -541,8 +541,8 @@ async def market_page(
         if pd.notna(row.get('contract_date')):
             row['contract_date'] = str(row['contract_date'])[:10]
 
-    return templates.TemplateResponse("market.html", {
-        "request": request, "user": user, "cs": cs,
+    return templates.TemplateResponse(request, "market.html", {
+        "user": user, "cs": cs,
         "data": table_data, "companies": companies,
         "company_sel": company_sel or (companies[0] if companies else ""),
         "report": report,
@@ -651,8 +651,8 @@ async def bid_page(
 
     total_budget = sum(d.get("budget") or 0 for d in data)
 
-    return templates.TemplateResponse("bid.html", {
-        "request": request, "user": user, "cs": cs,
+    return templates.TemplateResponse(request, "bid.html", {
+        "user": user, "cs": cs,
         "data": data, "s_date": s_date, "e_date": e_date,
         "search": search, "sort": sort,
         "total_count": len(data),
@@ -671,8 +671,8 @@ async def mypage(request: Request):
     user, cs = load_user(email, supabase)
     if not user:
         return RedirectResponse("/login")
-    return templates.TemplateResponse("mypage.html", {
-        "request": request, "user": user, "cs": cs,
+    return templates.TemplateResponse(request, "mypage.html", {
+        "user": user, "cs": cs,
     })
 
 @app.post("/api/mypage/keywords")

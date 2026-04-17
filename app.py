@@ -928,9 +928,15 @@ async def manual_collect(request: Request):
                         list(batch.values()), on_conflict="company_id,contract_id"
                     ).execute()
                     saved = len(batch)
-                except Exception as ex:
-                    logs.append(f"저장 오류: {ex}")
-                    return JSONResponse({"ok": False, "error": str(ex), "count": 0, "logs": logs})
+                except Exception:
+                    try:
+                        supabase.table("nara_market_data").upsert(
+                            list(batch.values()), on_conflict="contract_id"
+                        ).execute()
+                        saved = len(batch)
+                    except Exception as ex2:
+                        logs.append(f"저장 오류: {ex2}")
+                        return JSONResponse({"ok": False, "error": str(ex2), "count": 0, "logs": logs})
             logs.append(f"계약 수집 완료: {saved}건")
             return JSONResponse({"ok": True, "count": saved, "logs": logs})
 

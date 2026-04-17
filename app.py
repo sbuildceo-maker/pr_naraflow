@@ -22,8 +22,10 @@ STATUS_COLOR = {"신규":"#3b82f6","연락완료":"#f59e0b","계약성사":"#22c
 FAIL_OPTIONS = ["가격 경쟁력 부족","관계 부재","규격 미달","기간 내 대응 불가","내부 결정으로 제외","기타"]
 
 app = FastAPI(title="NARA BID Dashboard")
-templates = Jinja2Templates(directory="templates")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
+_static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(_static_dir):
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 
 # ── 공통 헬퍼 ─────────────────────────────────────────────────────────

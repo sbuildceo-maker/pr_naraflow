@@ -253,12 +253,15 @@ async def claim_service(record_id: str, request: Request):
     user, _ = load_user(email, supabase)
     if not user:
         raise HTTPException(401)
-    supabase.table("nara_service_data").update({
-        "claimed_by": user.get("name"),
-        "manager":    user.get("name"),
-        "status":     "분배완료",
-        "updated_at": datetime.now().isoformat(),
-    }).eq("id", record_id).execute()
+    try:
+        supabase.table("nara_service_data").update({
+            "claimed_by": user.get("name"),
+            "manager":    user.get("name"),
+            "status":     "분배완료",
+            "updated_at": datetime.now().isoformat(),
+        }).eq("id", record_id).execute()
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     return {"ok": True, "name": user.get("name")}
 
 @app.get("/api/service/regions")
@@ -353,13 +356,16 @@ async def region_assign(request: Request):
     body = await request.json()
     ids: list = body.get("ids", [])
     my_name = user.get("name", "")
-    for rid in ids:
-        supabase.table("nara_service_data").update({
-            "claimed_by": my_name,
-            "manager":    my_name,
-            "status":     "분배완료",
-            "updated_at": datetime.now().isoformat(),
-        }).eq("id", rid).execute()
+    try:
+        for rid in ids:
+            supabase.table("nara_service_data").update({
+                "claimed_by": my_name,
+                "manager":    my_name,
+                "status":     "분배완료",
+                "updated_at": datetime.now().isoformat(),
+            }).eq("id", rid).execute()
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     return {"ok": True, "count": len(ids), "name": my_name}
 
 @app.get("/api/service/company_analysis")

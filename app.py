@@ -224,16 +224,20 @@ async def update_service(record_id: str, request: Request):
         raise HTTPException(401)
     body = await request.json()
     supabase = sb()
-    supabase.table("nara_service_data").update({
-        "status":        body.get("status"),
-        "claimed_by":    body.get("claimed_by"),
-        "manager":       body.get("claimed_by"),
-        "fail_reason":   body.get("fail_reason",""),
-        "is_external":   body.get("is_external", False),
-        "external_name": body.get("external_name",""),
-        "remarks":       body.get("remarks",""),
-        "updated_at":    datetime.now().isoformat(),
-    }).eq("id", record_id).execute()
+    try:
+        supabase.table("nara_service_data").update({
+            "status":        body.get("status"),
+            "claimed_by":    body.get("claimed_by"),
+            "manager":       body.get("claimed_by"),
+            "fail_reason":   body.get("fail_reason",""),
+            "is_external":   body.get("is_external", False),
+            "external_name": body.get("external_name",""),
+            "remarks":       body.get("remarks",""),
+            "updated_at":    datetime.now().isoformat(),
+        }).eq("id", record_id).execute()
+    except Exception as e:
+        print(f"update_service error: {e}")
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     return {"ok": True}
 
 @app.post("/api/service/delete/{record_id}")

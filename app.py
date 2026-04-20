@@ -16,9 +16,9 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
-STATUS_LIST  = ["신규", "연락완료", "계약성사", "확인완료"]
-STATUS_EMOJI = {"신규":"🔵","연락완료":"🟡","계약성사":"🟢","확인완료":"🔴"}
-STATUS_COLOR = {"신규":"#3b82f6","연락완료":"#f59e0b","계약성사":"#22c55e","확인완료":"#ef4444"}
+STATUS_LIST  = ["신규", "분배완료", "연락완료", "계약성사", "확인완료"]
+STATUS_EMOJI = {"신규":"🔵","분배완료":"🟣","연락완료":"🟡","계약성사":"🟢","확인완료":"🔴"}
+STATUS_COLOR = {"신규":"#3b82f6","분배완료":"#8b5cf6","연락완료":"#f59e0b","계약성사":"#22c55e","확인완료":"#ef4444"}
 FAIL_OPTIONS = ["가격 경쟁력 부족","관계 부재","규격 미달","기간 내 대응 불가","내부 결정으로 제외","기타"]
 
 app = FastAPI(title="NARA BID Dashboard")
@@ -211,6 +211,7 @@ async def service_page(
         "FAIL_OPTIONS": FAIL_OPTIONS,
         "status_bg": {
             "신규":    "bg-blue-100 text-blue-700",
+            "분배완료": "bg-purple-100 text-purple-700",
             "연락완료": "bg-yellow-100 text-yellow-700",
             "계약성사":"bg-green-100 text-green-700",
             "확인완료":"bg-red-100 text-red-700",
@@ -255,10 +256,36 @@ async def claim_service(record_id: str, request: Request):
     supabase.table("nara_service_data").update({
         "claimed_by": user.get("name"),
         "manager":    user.get("name"),
-        "status":     "연락완료",
+        "status":     "분배완료",
         "updated_at": datetime.now().isoformat(),
     }).eq("id", record_id).execute()
     return {"ok": True, "name": user.get("name")}
+
+@app.get("/api/service/regions")
+async def get_regions(request: Request):
+    email = require_login(request)
+    if not email:
+        raise HTTPException(401)
+    supabase = sb()
+    res = supabase.table("user_info").select("my_regions").eq("email", email).maybe_single().execute()
+    raw = (res.data or {}).get("my_regions") if res else None
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            raw = []
+    return {"regions": raw or []}
+
+@app.post("/api/service/regions")
+async def save_regions(request: Request):
+    email = require_login(request)
+    if not email:
+        raise HTTPException(401)
+    body = await request.json()
+    regions = body.get("regions", [])
+    supabase = sb()
+    supabase.table("user_info").update({"my_regions": json.dumps(regions, ensure_ascii=False)}).eq("email", email).execute()
+    return {"ok": True}
 
 @app.get("/api/service/region")
 async def region_analysis(request: Request, region: str = Query(...)):
@@ -330,7 +357,7 @@ async def region_assign(request: Request):
         supabase.table("nara_service_data").update({
             "claimed_by": my_name,
             "manager":    my_name,
-            "status":     "연락완료",
+            "status":     "분배완료",
             "updated_at": datetime.now().isoformat(),
         }).eq("id", rid).execute()
     return {"ok": True, "count": len(ids), "name": my_name}

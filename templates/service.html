@@ -4,12 +4,14 @@
 {% block content %}
 {% set status_bg = {
   '신규':'bg-blue-100 text-blue-700',
+  '분배완료':'bg-purple-100 text-purple-700',
   '연락완료':'bg-yellow-100 text-yellow-700',
   '계약성사':'bg-green-100 text-green-700',
   '확인완료':'bg-red-100 text-red-700'
 } %}
 {% set status_border = {
   '신규':'border-blue-300',
+  '분배완료':'border-purple-300',
   '연락완료':'border-yellow-300',
   '계약성사':'border-green-300',
   '확인완료':'border-red-300'
@@ -540,12 +542,26 @@ async function claimRow(id, btn) {
 
 // ── 내담당 탭 Alpine 컴포넌트 ──────────────────────────────────
 function mineTab() {
-  const STORAGE_KEY = 'my_regions_v2';
   return {
-    regions: JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'),
+    regions: [],
     newRegion: '',
     assigning: false,
 
+    async init() {
+      try {
+        const res = await apiFetch('/api/service/regions');
+        this.regions = res.regions || [];
+      } catch(e) {
+        this.regions = JSON.parse(localStorage.getItem('my_regions_v2') || '[]');
+      }
+    },
+    async _saveRegions() {
+      try {
+        await apiFetch('/api/service/regions', {method:'POST', body: JSON.stringify({regions: this.regions})});
+      } catch(e) {
+        localStorage.setItem('my_regions_v2', JSON.stringify(this.regions));
+      }
+    },
     get filteredData() {
       if (!this.regions.length) return [];
       return SERVICE_DATA.filter(row =>
@@ -560,22 +576,23 @@ function mineTab() {
     statusBg(s) {
       const map = {
         '신규':'bg-blue-100 text-blue-700',
+        '분배완료':'bg-purple-100 text-purple-700',
         '연락완료':'bg-yellow-100 text-yellow-700',
         '계약성사':'bg-green-100 text-green-700',
         '확인완료':'bg-red-100 text-red-700',
       };
       return map[s] || 'bg-slate-100 text-slate-600';
     },
-    addRegion() {
+    async addRegion() {
       const r = this.newRegion.trim();
       if (!r || this.regions.includes(r)) { this.newRegion = ''; return; }
       this.regions.push(r);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.regions));
       this.newRegion = '';
+      await this._saveRegions();
     },
-    removeRegion(idx) {
+    async removeRegion(idx) {
       this.regions.splice(idx, 1);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.regions));
+      await this._saveRegions();
     },
     async autoAssign() {
       if (!this.unassignedIds.length) return;
